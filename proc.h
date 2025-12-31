@@ -49,6 +49,11 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  int tickets;
+  uint stride;	// 기본값 : 0 (setticket으로 설정)
+  uint pass;
+  int ticks;
+  int end_ticks;	//기본값 : -1 (양수인 경우 ticks 변수가 end_ticks값이 되면 프로세스 종료)
 };
 
 // Process memory is laid out contiguously, low addresses first:
@@ -56,3 +61,6 @@ struct proc {
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+#define STRIDE_MAX 100000
+#define PASS_MAX 15000
+#define DISTANCE_MAX 7500

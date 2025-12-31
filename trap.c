@@ -103,8 +103,32 @@ trap(struct trapframe *tf)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+     tf->trapno == T_IRQ0+IRQ_TIMER) {
+    
+    // (3)-1 debug 스케줄러에게 CPU 제어권을 넘기는 시점
+    if (myproc()->pid > 2 && myproc()->parent->pid > 2) {
+	int old_pass = myproc()->pass;
+	//ticks, pass값 갱신
+	myproc()->ticks++;
+	myproc()->pass += myproc()->stride;
+	cprintf("Process %d selected, stride : %d, ticket : %d, pass : %d -> %d (%d/%d) \n",
+                myproc()->pid, 
+		myproc()->stride,
+		myproc()->tickets,
+		old_pass,
+		myproc()->pass,
+		myproc()->ticks,	//누적 tick 수 (임의 카운터)
+		myproc()->end_ticks	// 종료 tick -1
+		);
+    }
+
+    //end_ticks 도달 시 exit 바로
+    if(myproc()->end_ticks > 0 && myproc()->ticks >= myproc()->end_ticks) {
+	myproc()->killed = 1;
+    } else {
+    	yield();
+    }
+  }
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)

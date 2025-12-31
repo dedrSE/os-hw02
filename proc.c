@@ -112,6 +112,13 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  //값 초기화
+  p->tickets	= 1;
+  p->stride	= 0;
+  p->pass	= 0;
+  p->ticks	= 0;
+  p->end_ticks	= -1;
+
   return p;
 }
 
@@ -217,6 +224,16 @@ fork(void)
   np->state = RUNNABLE;
 
   release(&ptable.lock);
+  // Debug 출력
+  if (np->pid > 2 && curproc->pid > 2)
+    cprintf("Process %d start\n", np->pid);
+
+  //자식 값 초기화
+  np->tickets	= myproc()->tickets;
+  np->stride	= 0;
+  np->pass	= 0;
+  np->ticks	= 0;
+  np->end_ticks = -1;
 
   return pid;
 }
@@ -261,9 +278,15 @@ exit(void)
     }
   }
 
+  //(3)-4 종료 시점
+  if(curproc->pid > 2 && curproc->parent->pid > 2) {
+	  cprintf("Process %d exit\n", curproc->pid);
+  }
+
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   sched();
+
   panic("zombie exit");
 }
 
@@ -323,6 +346,10 @@ void
 scheduler(void)
 {
   struct proc *p;
+  //선택 후 loop내 pass 값 비교 위한 target 설정
+  struct proc *target_p;
+  int min;	//최소값 비교 위한 변수
+
   struct cpu *c = mycpu();
   c->proc = 0;
   
@@ -331,27 +358,70 @@ scheduler(void)
     sti();
 
     // Loop over process table looking for process to run.
+    // lock 상태에서 탐색 실시
     acquire(&ptable.lock);
+
+    target_p = 0;
+    min = -1;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
-
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+      //min값 설정 X(초기 할당 안된 상태) || pass값 더 작은 경우 || pass값 같은데 pid 작은 경우
+      if( target_p == 0 || p->pass < min || 
+		      ( p->pass == min && p->pid < target_p->pid )) {
+        target_p = p;
+	min = target_p->pass;
+      }
     }
-    release(&ptable.lock);
 
+    //선택된거 없으면 다음 루프
+    if(target_p == 0) {
+	    release(&ptable.lock);
+	    continue;
+    }
+
+    //선택된 프로세스 실행
+    p = target_p;
+    c->proc = p;
+    switchuvm(p);	//p주소 바라보게 함
+    p->state = RUNNING;
+
+    swtch(&(c->scheduler), p->context);
+    switchkvm();	//다시 돌아옴
+    
+    //rebase 수행
+    if(p->pass >= PASS_MAX) {
+      int min_pass = -1;
+      struct proc *q;
+
+      //최소 q->pass 값 찾기
+      for(q = ptable.proc ; q < &ptable.proc[NPROC] ; q++) {
+        if(q->state != RUNNABLE || q->pid <= 2) continue;
+
+	if(min_pass == -1 || q->pass < min_pass)
+          min_pass = q->pass;
+      }
+      //전체 - min_pass 수행
+      for(q = ptable.proc ; q < &ptable.proc[NPROC] ; q++) {
+        if(q->state != RUNNABLE || q->pid <= 2) continue;
+
+	//최대 거리 넘을 경우 cut
+        if(q->pass - min_pass > DISTANCE_MAX) {
+          q->pass = DISTANCE_MAX;
+	} else {
+          q->pass -= min_pass;
+	}
+      }
+    }	
+
+    // Process is done running for now.
+    // It should have changed its p->state before coming back.
+    c->proc = 0;
+    //락 해제
+    release(&ptable.lock);
   }
 }
 

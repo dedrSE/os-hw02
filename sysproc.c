@@ -89,3 +89,27 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+//2 settickets 함수 구현
+int
+sys_settickets(void)
+{
+  int tickets, end_ticks;
+  //사용자 인자 0번째 가져오고, 실패시 -1리턴
+  if(argint(0, &tickets) < 0) return -1;
+
+  //사용자 인자 1번째 가져오고, 없으면 0
+  argint(1, &end_ticks);
+
+  //티켓수가 1미만이거나, STRIDE_MAX 초과하면 에러
+  if(tickets < 1 || tickets > STRIDE_MAX)
+	  return -1;
+
+  //현재 실행 중인 프로세스 포인터 가져와서 값 세팅
+  struct proc *p = myproc();
+  p->tickets = tickets;
+  p->stride = STRIDE_MAX / tickets;
+  if(end_ticks >= 1) p->end_ticks = end_ticks;
+
+  return 0;
+}
